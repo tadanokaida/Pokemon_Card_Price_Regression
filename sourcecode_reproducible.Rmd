@@ -9,7 +9,7 @@ output: html_document
 
 ```{r, warning = FALSE, message = FALSE, echo = FALSE, warning = FALSE, include = FALSE}
 #install.packages(c("data.table","kableExtra", "R.utils"))
-#install.packages("plyr")
+#install.packages("dplyr")
 ```
 
 ```{r, warning = FALSE, message = FALSE, include=FALSE}
@@ -109,9 +109,12 @@ Requesting Name Data from separate API
 Read in data stored in github to allow reproducible study
 ```{r, warning = FALSE, message = FALSE, include=FALSE}
 # To reproduce data from date of report submission (May 7, 2024)
-card_data <- read.csv("card_data070524.csv")
-set_data <- read.csv("set_data070524.csv")
-pokemon_names <- read.csv("name_data070524.csv")
+card_datafile <- "https://raw.githubusercontent.com/tadanokaida/Pokemon_Card_Price_Regression/master/data/card_data070524.csv"
+set_datafile <- "https://raw.githubusercontent.com/tadanokaida/Pokemon_Card_Price_Regression/master/data/set_data070524.csv"
+name_datafile <- "https://raw.githubusercontent.com/tadanokaida/Pokemon_Card_Price_Regression/master/data/name_data070524.csv"
+card_data <- read.csv(card_datafile)
+set_data <- read.csv(set_datafile)
+pokemon_names <- read.csv(name_datafile)
 ```
 
 Merge card and set data

@@ -35,7 +35,7 @@ train <- read.csv("data/train_data070524.csv")
 
 Note that these figures are labelled using letters rather than numbers to avoid confusion with figures contained in the written report. Since these plots are used in the EDA of my report, these plots are generated using the training data from my study. This ensures the testing data does not affect my analysis during my EDA.
 
-### Figure B:
+### Figure B: (Rarity)
 
 ```{r, warning = FALSE, message = FALSE, echo = FALSE}
 plot1 <- train %>%
@@ -61,7 +61,7 @@ ggplotly(plot1, tooltip = "text")
 
 Figure B is a barplot showing the mean of the response variable (logarithmic average selling price in Euros, scaled by a factor of 10) for each of the 31 rarity groups. The rarities are ordered in descending order by the number of cards in the rarity. This barplot helps us observe how rarity affects the response variable, while also exploring how this relationship is affected by the number of cards in each rarity. Looking at different lengths of bars in Figure B, we can observe that different rarities have different mean values for the response. The differences in lengths between bars can be pretty significant, indicating the effectiveness of rarity as a predictor for average selling price. Since the boxplot is ordered and coloured by number of cards in each rarity, we can try to observe the distribution of cards to each rarity. Unfortunately, we cannot see any clear pattern on how the number of cards affects average selling price, so this cannot act as a substitute for rarity (does not carry the same necessary information). However, we can make an interesting observation that the "Rare" rarity has 1489 cards (seen by hovering over the bar with mouse) and a very low (scaled) log average selling price compared to the other rarities. In fact, it is the only rarity with a negative log price, which means its average price is below $1$ Euro. Thus, with its abundance of cards and low average selling price, we can induce that the "Rare" rarity generally acts as a the "common" rarity among rare cards. Overall, we have seen through Figure B that the rarity variable has effects on the response variable and that summary statistics of rarity have a hard time capturing the relationship between rarity and the response variable.
 
-### Figure C
+### Figure C: (Rarity)
 
 ```{r, warning = FALSE, message = FALSE, echo = FALSE}
 rarity_subset <- train %>%
@@ -90,7 +90,7 @@ ggplotly(plot2)
 
 Figure C displays boxplots for distributions of the response variable for each rarity with over $25$ observations. The plot is an extension of Figure B with the purpose of looking further into whether the relationship between the rarity predictor and the response variable can be captured by summary statistics for rarity. This series of boxplots (ordered in descending order of number of cards in rarity) allows us to investigate the standard deviation in logarithmic average selling price for each rarity. Unfortunately, there does not seem to be an identifiable relationship between the standard deviation (spread) of each rarity and its median logarithmic average selling price. On the other hand, we can observe that some rarities with larger amounts of observations have larger standard deviations. However, this is not universally true as we can see this pattern broken as travel down the boxplots. Additionally, we have already shown through Figure B that summary statistics (number of observations) of the logarithmic price distribution for each rarity do not capture rarity's relationship with the response variable well. Thus, the standard deviation of logarithmic average selling price for each rarity (Rarity PSD predictor) seems to lack a strong relationship with the response variable.
 
-### Figure D:
+### Figure D: (Character Appearances)
 
 ```{r, warning = FALSE, message = FALSE, echo = FALSE}
 top_8_popular_char <- train %>%
@@ -121,7 +121,7 @@ ggplotly(plot3, tooltip = "text")
 
 Figure D displays the distributions for the scaled logarithmic average selling prices (response variable) of the top 8 Pokémon characters sorted in descending order (from left to right/top to bottom) of the number of character appearances in rare Pokémon cards. Here, we can observe that the median prices do not strictly decline as the number of character appearances decreases (from left to right). Since this plot is structured by Pokémon characters rather than number of character appearances (although they correspond to each other), we can closely observe the distribution of the response variable for each character. For example, we can notice the outlier in the boxplot for the Pokémon "Rayquaza" with $71.11$ scaled logarithmic average selling price and use Figure E to learn more about this observation.
 
-### Figure E:
+### Figure E: (Character Appearances)
 
 ```{r, warning = FALSE, message = FALSE, echo = FALSE}
 top_8_popular_char <- train %>%
@@ -142,7 +142,7 @@ plot4 <- top_8_data %>%
   ylab("Logarithmic Average Selling Price") + 
   xlab("Number of Days Old") +
   guides(color = guide_legend(title = "Pokemon Names")) + # it doesn't allow me to use an "é" in the legend title...
-  ggtitle("Figure #: Logarithmic Average Selling Prices (Euros) Over
+  ggtitle("Figure E: Logarithmic Average Selling Prices (Euros) Over
   Days Old for Top 8 Pokemon With Most Rare Card Appearances") +
   theme(plot.title = element_text(hjust = 0.5, size = 11))
   

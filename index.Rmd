@@ -62,15 +62,15 @@ A few notes on some specifics for this research question:
 
 - By "rare" Pokémon cards, I am referring to all Pokémon cards (of type Pokémon) excluding cards with rarity "Common" or "Uncommon". This is because these cards appear more frequently than rare cards and are not very desirable (besides a few outliers). Thus, there is not much of a market to consider for non-rare cards.
 - I am working with Euros since the API for card data I am working with offers price data in both USD and Euros. However, The  data in USD had inconsistent formatting leading to import errors and data errors for many observations. Working with Euros still reflects the overall market for Pokémon cards (in English), but will be more specific to Europe compared to North America.
-- The current average selling price for each card is given by https://www.cardmarket.com/ (but extracted from the card API).
+- The current average selling price for each card is given by [CardMarket](https://www.cardmarket.com/) (but extracted from the card API).
 - The response variable is logarithmic to combat skewness (expanded on later).
 
 ### Obtaining the Data
 
 There are two APIs I used to obtain data for my study, both of which can be found at the top right of my website (or below):
 
-- I used the Pokémon TCG API (https://docs.pokemontcg.io/) to retrieve all data regarding both cards and sets. I merged these two datasets together (by set ID) to create one dataset for all rare Pokémon type cards ($7651$ observations).
-- I used the PokéAPI (https://pokeapi.co/) to retrieve data on Pokémon character names. This is used to help with the construction of one predictor variable (discussed later), but not as a predictor itself.
+- I used the [Pokémon TCG API](https://docs.pokemontcg.io/) to retrieve all data regarding both cards and sets. I merged these two datasets together (by set ID) to create one dataset for all rare Pokémon type cards ($7651$ observations).
+- I used the [PokéAPI](https://pokeapi.co/) to retrieve data on Pokémon character names. This is used to help with the construction of one predictor variable (discussed later), but not as a predictor itself.
 
 Details on making the same data requests to these APIs can be found on this project's github repository (or in the first few code blocks of the source code for the non-reproducible version that requests data from the APIs).
 
@@ -163,3 +163,11 @@ This following is a very quick and limited summary of some interesting results f
 - Rarity PSD was dropped from final models considering its lack of significance as a predictor and the significance of rarity as a predictor variable.
 - Most models had similar test RMSE values. Some models showed signs of overfitting while others did not.
 - Interesting comparison between linear regression model without interaction and linear regression model with interaction.
+
+# Project Links
+
+- The Project repository can be found [here](https://github.com/tadanokaida/Pokemon_Card_Price_Regression)
+
+- Download the written report [here](https://raw.githubusercontent.com/tadanokaida/Pokemon_Card_Price_Regression/master/pokemon_card_price_regression_report.pdf) or at the top of the website.
+
+- Watch my video presentation [here]()

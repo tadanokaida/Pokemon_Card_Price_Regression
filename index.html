@@ -328,7 +328,7 @@ div.tocify {
   <a href="visualizations.html">Visualizations</a>
 </li>
 <li>
-  <a href="report.html">Download Report</a>
+  <a href="https://raw.githubusercontent.com/tadanokaida/Pokemon_Card_Price_Regression/master/pokemon_card_price_regression_report.pdf">Download Report</a>
 </li>
       </ul>
       <ul class="nav navbar-nav navbar-right">
@@ -451,9 +451,8 @@ many observations. Working with Euros still reflects the overall market
 for Pokémon cards (in English), but will be more specific to Europe
 compared to North America.</li>
 <li>The current average selling price for each card is given by <a
-href="https://www.cardmarket.com/"
-class="uri">https://www.cardmarket.com/</a> (but extracted from the card
-API).</li>
+href="https://www.cardmarket.com/">CardMarket</a> (but extracted from
+the card API).</li>
 <li>The response variable is logarithmic to combat skewness (expanded on
 later).</li>
 </ul>
@@ -463,16 +462,15 @@ later).</li>
 <p>There are two APIs I used to obtain data for my study, both of which
 can be found at the top right of my website (or below):</p>
 <ul>
-<li>I used the Pokémon TCG API (<a href="https://docs.pokemontcg.io/"
-class="uri">https://docs.pokemontcg.io/</a>) to retrieve all data
-regarding both cards and sets. I merged these two datasets together (by
-set ID) to create one dataset for all rare Pokémon type cards (<span
-class="math inline">\(7651\)</span> observations).</li>
-<li>I used the PokéAPI (<a href="https://pokeapi.co/"
-class="uri">https://pokeapi.co/</a>) to retrieve data on Pokémon
-character names. This is used to help with the construction of one
-predictor variable (discussed later), but not as a predictor
-itself.</li>
+<li>I used the <a href="https://docs.pokemontcg.io/">Pokémon TCG API</a>
+to retrieve all data regarding both cards and sets. I merged these two
+datasets together (by set ID) to create one dataset for all rare Pokémon
+type cards (<span class="math inline">\(7651\)</span>
+observations).</li>
+<li>I used the <a href="https://pokeapi.co/">PokéAPI</a> to retrieve
+data on Pokémon character names. This is used to help with the
+construction of one predictor variable (discussed later), but not as a
+predictor itself.</li>
 </ul>
 <p>Details on making the same data requests to these APIs can be found
 on this project’s github repository (or in the first few code blocks of
@@ -684,6 +682,17 @@ of overfitting while others did not.</li>
 interaction and linear regression model with interaction.</li>
 </ul>
 </div>
+</div>
+<div id="project-links" class="section level1">
+<h1>Project Links</h1>
+<ul>
+<li><p>The Project repository can be found <a
+href="https://github.com/tadanokaida/Pokemon_Card_Price_Regression">here</a></p></li>
+<li><p>Download the written report <a
+href="https://raw.githubusercontent.com/tadanokaida/Pokemon_Card_Price_Regression/master/pokemon_card_price_regression_report.pdf">here</a>
+or at the top of the website.</p></li>
+<li><p>Watch my video presentation <a href="">here</a></p></li>
+</ul>
 </div>
 
 
