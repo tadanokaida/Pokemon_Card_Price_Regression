@@ -1,0 +1,1066 @@
+---
+title: "Pokemon Card Project Source Code"
+author: "Kevin Huang"
+date: "2024-03-15"
+output: html_document
+---
+
+# Note, this document is not meant to be knitted, but instead run through each code block to see relevant output with comments.
+
+```{r, warning = FALSE, message = FALSE, echo = FALSE, warning = FALSE, include = FALSE}
+#install.packages(c("data.table","kableExtra", "R.utils"))
+#install.packages("plyr")
+```
+
+```{r, warning = FALSE, message = FALSE, include=FALSE}
+library(rvest)
+library(xml2)
+library(httr)
+library(data.table)
+library(tidyverse)
+library(ggplot2)
+library(tidyr)
+library(kableExtra)
+library(dplyr)
+library(tidytext)
+library(mgcv)
+library(tidyverse)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+library(gbm)
+library(xgboost)
+library(caret)
+```
+
+Requesting Card Data from API
+```{r, warning = FALSE, message = FALSE, include=FALSE}
+# # the maximum number of observations/cards per page is 250
+# # there a total of 34 pages
+# # now only 31 pages when looking only at Pokemon type cards
+# card_data <- data.frame()
+# for (i in 1:31) {
+#   card_query <- GET(
+#     url = "https://api.pokemontcg.io/",
+#     path = "v2/cards",
+#     query = list(
+#       pageSize=250, #maximum at once
+#       page = i,
+#       q = "id:* name:* supertype:Pokémon rarity:* artist:* -rarity:common -rarity:uncommon cardmarket.prices.averageSellPrice:[0 TO *]"
+#     ))
+#   card_sample <- content(card_query)
+#   card_sample <- lapply(card_sample$data, function(a) {
+#     data.frame(
+#       card_id = a$id,
+#       card_name = a$name,
+#       #card_type = a$supertype,
+#       set_id = a$set$id,
+#       price_euros = a$cardmarket$prices$averageSellPrice,
+#       rarity = a$rarity,
+#       artist = a$artist
+#     )
+#   })
+#   card_sample <- do.call(rbind, card_sample)
+#   card_data <- rbind(card_data, card_sample)
+# }
+```
+
+Requesting Set Data from API
+```{r, warning = FALSE, message = FALSE, include=FALSE}
+# set_query <- GET(
+#   url = "https://api.pokemontcg.io/",
+#   path = "v2/sets"
+# )
+# 
+# set_data <- content(set_query)
+# set_data <- lapply(set_data$data, function(a) {
+#   data.frame(
+#     set_id = a$id,
+#     total_cards = a$total,
+#     release_date = a$releaseDate
+#   )
+# })
+# set_data <- do.call(rbind, set_data)
+# # set_data now holds the set's id, total number of cards in the set, and its release date.
+```
+
+Requesting Name Data from separate API
+```{r, warning = FALSE, message = FALSE, include=FALSE}
+# # New data from separate API used to create a new predictor variable.
+# # I don't use any variables from this data directly as predictor variables.
+# 
+# pokemon_names_query <- GET(
+#   url = "https://pokeapi.co/",
+#   path = "api/v2/pokemon",
+#   query = list(
+#     limit = 1025 # current number of existing pokemon
+#   )
+# )
+# 
+# pokemon_names <- content(pokemon_names_query)
+# pokemon_names <- lapply(pokemon_names$results, function(a) {
+#   data.frame(
+#     name = a$name
+#   )
+# })
+# pokemon_names <- do.call(rbind, pokemon_names)
+```
+
+Read in data stored in github to allow reproducible study
+```{r, warning = FALSE, message = FALSE, include=FALSE}
+# To reproduce data from date of report submission (May 7, 2024)
+card_data <- read.csv("card_data070524.csv")
+set_data <- read.csv("set_data070524.csv")
+pokemon_names <- read.csv("name_data070524.csv")
+```
+
+Merge card and set data
+```{r, warning = FALSE, message = FALSE, include=FALSE}
+data <- merge(
+  x = card_data,
+  y = set_data,
+  by.x = c("set_id"),
+  by.y = c("set_id")
+)
+```
+
+Check dimensions
+```{r, warning = FALSE, message = FALSE, echo = FALSE}
+str(data)
+dim(data)
+```
+
+
+Switch some string vars to factor
+```{r, warning = FALSE, message = FALSE, echo = FALSE}
+data$rarity <- as.factor(data$rarity)
+data$artist <- as.factor(data$artist)
+# keep card name as a string variable so I can perform text extraction later
+# date will be converted to a new variable in later code blocks
+
+# check how many levels are in factor variables (won't display unless include = TRUE)
+str(data)
+```
+
+
+Table of raw data
+```{r, warning = FALSE, message = FALSE, echo = FALSE}
+tbl_raw_data <- data.frame(
+  Variables = c("Average Selling Price (Euros)", "Card Name", "Rarity", "Artist", "Number of Cards in Set", "Release Date"),
+  Type = c("Numeric", "String", "Factor (31 levels)", "Factor (278 levels)", "Integer", "String"),
+  Description = c("Related to response variable. Current average market selling price of a card in Euros. Prices set by sellers and purchases made by bidders.", "The card's name. Describes the primary character featured in the card", "Rarity of the card (assigned by Pokémon company)", "Illustrator of card's artwork", "Total number of cards in the card's set", "The date that the set which contains the card was released. Formatted as 'Year/Month/Day'")
+)
+
+kbl(tbl_raw_data, caption = "<center>Table 1: Summary of Variables of Interest in Raw Data</center>") %>%
+  kable_paper(full_width = F) %>%
+  column_spec(1, bold = T, border_right = T) %>%
+  column_spec(2, border_right = T, width = "9em") %>%
+  column_spec(3, width = "35em",)
+```
+
+Converting price to log price (combat skew)
+
+```{r, warning = FALSE, message = FALSE, echo=FALSE}
+### Note that I deleted the code for closely examining other key variables (e.x. table(), summary(), and exploratory plots) since they took a lot of space in the rmarkdown file. I had an issue with rstudio consistently freezing after working on the file for a while, so I ended up moving some code chunks to a separate file, to ensure there would be no issues when knitting this report. The results of closely looking at each variable were standard as I observed no other issues with the data, which I summarized in the report.
+
+# set include = TRUE to see plots
+
+price_data_errors <- data %>% 
+  filter(price_euros == 0)
+# non-logarithmic distribution of price is VERY right skewed.
+data %>%
+  ggplot(aes(x = price_euros)) +
+  geom_histogram()
+
+data %>%
+ggplot(aes(x = price_euros)) + 
+  geom_boxplot()
+
+# I must add +0.001 before taking the log so that some observations do not have log price value equal to negative infinity
+#data$log_price_euros <- log(data$price_euros + 0.001)
+
+data <- data %>%
+  filter(price_euros > 0)
+
+data$log_price_euros <- log(data$price_euros) * 10 ### scale by 10
+
+# after taking logarithmic price, distribution is much less skewed. Although it is still slightly right-skewed.
+data %>%
+  ggplot(aes(x = log_price_euros)) +
+  geom_histogram()
+
+data %>%
+  ggplot(aes(x = log_price_euros)) + 
+  geom_boxplot()
+
+# I will repeat the boxplots and display them in the written report in the results section, to justify taking the log of the response variable (average selling price in Euros).
+```
+
+Perform data checks on key variables for data errors and missing values
+Note: I cut this part out of the source code so it isnt filled with plots to check distributions of each variable.
+
+Create days since relaase variable
+```{r, warning = FALSE, message = FALSE, include=FALSE}
+# Creating a days_old variable (integer)
+data$release_date <- as.Date(data$release_date, format = "%Y/%m/%d")
+data$days_old = as.integer(difftime(Sys.Date(), data$release_date, units = "days"))
+```
+
+
+Collapse artist variable into artist frequency
+```{r, warning = FALSE, message = FALSE, echo=TRUE}
+# Collapsing artists into groups to create a new factor variable with much fewer levels.
+# Artist variable has 278 levels.
+# I will convert the variable to a factor variable that groups artists by how many cards they have illustrated for.
+# This variable has 3 levels
+
+artists_data <- data %>%
+  group_by(artist) %>%
+  summarise(n_illusts = n())
+
+
+# There was no obvious way to split the levels (e.x. no guidelines such as for temperature)
+# So I decided to use the quartiles, inspired by HW2 with the alcohol consumption data
+q <- quantile(artists_data$n_illusts)
+
+artists_data$artist_frequency <- as.factor(
+  ifelse(artists_data$n_illusts < q[3], "infrequent",
+  ifelse(artists_data$n_illusts< q[4], "frequent", "abundant")
+))
+
+table_2_1 <- artists_data %>% 
+  group_by(artist_frequency) %>%
+  summarise(
+    count = n()
+  )
+
+table_2_1 %>%
+  kbl() %>%
+  kable_styling()
+  
+
+#print quantiles to see cut offs (output hidden unless include = TRUE)
+q
+
+artists_data <- artists_data %>%
+  select(-n_illusts) 
+
+data <- merge(x = data,
+      y = artists_data,
+      by = "artist",
+      all.x = TRUE)
+
+table_2_2 <- data %>%
+  group_by(artist_frequency) %>%
+  summarise(count = n())
+
+table_2_2 %>%
+  kbl() %>%
+  kable_styling()
+```
+
+
+Create rarity phd variable
+```{r, warning = FALSE, message = FALSE, include=FALSE}
+# Creating rarity_psd variable
+temp_rarity <- data %>%
+  group_by(rarity) %>%
+  summarise(rarity_psd = sd(log_price_euros,),
+            rarity_effect_size = sd(log_price_euros)/n())
+
+data <- merge(
+  x = data,
+  y = temp_rarity,
+  all.x = TRUE
+)
+```
+
+
+
+Create character appearances variable through text mining (complicated process)
+```{r, warning = FALSE, message = FALSE, include=FALSE}
+# Text mining to create new variable "character_appearances" which represents the total number of rare cards that
+# feature the pokemon that is featured in the current card (reflected in the card's name)
+
+# This variable aims to capture how 'popular' a pokemon is, by seeing how many times the Pokemon Company
+# uses this pokemon in rare cards (to generate hype and sales of sets).
+
+original_data <- data # to check lost observations through this process
+
+
+# manually entered these names with the help of external sources (checked the same API for the names, but I just excluded the extra words describing their forms etc...)
+manual_pokemon_names <- data.frame(c("aegislash", "darmanitan", "eiscue", "morpeko", "minior", "zygarde", "mimikyu", "oricorio", "deoxys", "tornadus", "lycanroc", "landorus", "thundurus", "giratina", "basculin", "meloetta", "keldeo", "toxtricity", "urshifu", "shaymin", "basculegion", "meowstic", "gourgeist", "indeedee", "wormadam", "exeggutor", "wishiwashi", "enamorus", "farfetch'd", "sirfetch'd"))
+names(manual_pokemon_names) <- "name"
+
+pokemon_names <- rbind(pokemon_names, manual_pokemon_names)
+
+names_count <- data %>%
+  unnest_tokens(word, card_name) %>%
+  filter(word %in% pokemon_names$name) %>%
+  count(word, sort = TRUE) %>%
+  rename("name" = word, "character_appearances" = n)
+
+# Some card names have names such as [Pokemon name]-[Rarity]
+# so I attempt to split these strings by hyphens and spaces.
+# I successfully capture some in my data, but strangely also lose some
+# as seen in the lost_observations data in the code block below.
+l <- strsplit(as.character(data$card_name), '[- ]+')
+name <- unlist(l)
+card_name <- rep(data$card_name, lengths(l))
+
+# Create a row for each substring in a card name
+# This is essential for finding the correct
+# Pokemon name/substring in the card name and merging the datasets
+temp_data <- data.frame(name = unlist(l), card_name = rep(data$card_name, lengths(l)))
+
+# match the strings as the PokeAPI data had uppercase letters
+temp_data$name <- tolower(temp_data$name)
+
+# Merge by pokemon name
+merged_data <- merge(x = names_count,
+      y = temp_data,
+      by = "name")
+
+merged_data <- merged_data %>%
+  distinct(card_name, .keep_all = TRUE)
+# I will keep the "name" variable for a table in the results section
+# However it will not be used as a predictor variable (still too many factors)
+# Which is why I am using an integer "character_appearances" to represent how
+# 'popular' each pokemon name/character is.
+
+# dataset to be used when dealing with this variable.
+data <- merge(
+  x = original_data,
+  y = merged_data,
+  all.y = TRUE
+)
+
+# The range of my variable is 1 to 95
+# note that it cannot take the value 0, since each observation is a card.
+# If a pokemon character does not have a rare card, it would not be in the dataset.
+```
+
+Examine lost observations from above process
+```{r, warning = FALSE, message = FALSE, include=FALSE}
+# There are originally 611 lost observations from my code in the above block.
+
+# However, after manually adding some pokemon names that were represented differently in the API I requested the data from,
+# I reduced this number to 207 lost observations
+
+# The remaining lost observations follow a specific pattern. These pokemon names cannot be included in the
+# data moving forward due to the tokenizing process to separate pokemon names from rarity descriptions within card names.
+
+# This pattern includes pokemon with special characters between their name (dot ".", dash "-", or a space " ") 
+# such as "Tapu Koko" and "Ho-oh"
+
+lost_observations <- anti_join(original_data, data)
+dim(lost_observations)
+
+# Ensure no observation has missing values for new variable
+# (all observations with NA for this variable are not merged, instead found in lost_observations)
+mean(is.na(data$character_appearances))
+
+# remaining data contains 7444 observations compared to the original 7651
+```
+
+Summarized processed data
+
+```{r, warning = FALSE, message = FALSE, echo = FALSE}
+tbl_proc_data <- data.frame(
+  Variables = c("Logarithmic Average Selling Price (Euros)", "Number of Days Passed Since Release", "Rarity", "Log Price Standard Deviation of Rarities",  "Artist Frequency", "Number of Cards in Set", "Character Appearances"),
+  Type = c("Numeric", "Integer", "Factor (31 levels)", "Numeric", "Factor (3 levels)", "Integer", "Integer"),
+  Description = c("Response Variable. Logarithmic current average selling price of a card in Euros. Log to combat skewness. Scaled by a Multiplicative Factor of 10", "The number of days from the current day (May 7, 2024) to card's release date", "Rarity of the card (assigned by Pokemon company)", "Standard deviation of the distribution of logarithmic average selling price for the card's assigned rarity", "How often this card's illustrator designs cards. Levels: Infrequent (1 to 6 cards), Frequent (7 to 24 cards), Abundant (25 to 1213 cards)", "Total number of cards in the card's set", "The number of rare cards that feature the Pokemon character featured in the current card.")
+)
+
+kbl(tbl_proc_data, caption = "Table 3: Variable Summary of Processed Data") %>%
+  kable_paper(full_width = F) %>%
+  column_spec(1, bold = T, border_right = T) %>%
+  column_spec(2, border_right = T, width = "9em") %>%
+  column_spec(3, width = "35em",)
+```
+
+Once again check all new variables for newly introduced data errors or implausible values.
+(Cut out again to save space, none found other than with the price in the beginning)
+
+
+Train test split before EDA to make sure test data doesn't affect my analysis.
+```{r, warning = FALSE, message = FALSE, include=FALSE}
+#train test split
+# 70% training data and 30% testing data (which may be further split into validation and test data)
+set.seed(0)
+sample_ind <- sample(c(TRUE,FALSE), nrow(data), replace = TRUE, prob = c(0.7,0.3))
+train <- setDT(data[sample_ind, ])
+test <- setDT(data[!sample_ind, ])
+dim(train)
+dim(test)
+
+# output train data for interactive plots on website so I can perform more EDA with same training data
+# (EDA on training data to prevent test data from affecting my judgement of relationships between variables)
+write.csv(train, "train_data.csv", row.names = FALSE)
+```
+
+Analyze response variable (again) to show as a figure in report
+```{r, warning = FALSE, message = FALSE, echo = FALSE}
+prices_long <- train %>%
+  select(price_euros, log_price_euros) %>% # only need to look at these variables for this plot
+  melt() # make data long so I can plot both at once
+
+prices_long %>%
+  ggplot(aes(value)) +
+  geom_boxplot() +
+  facet_wrap(~variable, scales = "free", strip.position = "bottom",
+             labeller = as_labeller(c(price_euros = "Average Selling Price (Euros)",
+                                      log_price_euros = "Logarithmic Average Selling Price (Euros)"))) + 
+  ggtitle("Figure 1: 
+  Distribution Comparison Between Average Selling Price and
+Scaled Logarithmic Average Selling Price of Pokemon Cards in Euros") +
+  theme(plot.title = element_text(hjust = 0.5),
+        strip.placement = "outside", strip.background = element_blank()) + 
+  xlab("") # The facet_wrap strip labels already act as x-axis labels (each plot has separate x-axis differing by scale)
+  
+```
+
+Corelation heatmap
+```{r, warning = FALSE, message = FALSE, echo = FALSE}
+# Used a reference to make heatmap look more appealing and easier to interpret: http://www.sthda.com/english/wiki/ggplot2-quick-correlation-matrix-heatmap-r-software-and-data-visualization
+
+numerical_preds <- train %>%
+  select(days_old, character_appearances, rarity_psd, total_cards) %>%
+  rename("Days Old" = days_old ,
+         "Character Appearances" = character_appearances,
+         "Rarity PSD" = rarity_psd,
+         "Total Cards in Set" = total_cards)
+
+cormat <-  round(cor(numerical_preds),2) %>%
+  melt()
+
+ggplot(cormat, aes(x=Var1, y = Var2, fill = value)) +
+geom_tile() + 
+geom_tile(color = "white")+
+ scale_fill_gradient2(low = "blue", high = "red", mid = "white", midpoint = 0, limit = c(-1,1), space = "Lab", 
+   name="Pearson\nCorrelation") +
+geom_text(aes(Var2, Var1, label = value), color = "black") +
+ggtitle("Figure 2: Pearson Correlation Matrix Heatmap for Numerical Predictors") + 
+theme_minimal()+ 
+  coord_fixed() +
+  theme(
+  axis.title.x = element_blank(),
+  axis.title.y = element_blank(),
+  plot.title = element_text(hjust = 0.5),
+  axis.text.y = element_text(),
+  axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)
+  )
+```
+
+Next, we can observe the card names of the $8$ most expensive cards (names) in the training data through the Table 1 found below: (cutout from report)
+
+```{r, warning = FALSE, message = FALSE, echo = FALSE}
+train %>%
+  group_by(card_name) %>%
+  summarise(
+    max_price = max(price_euros),
+    avg_price = mean(price_euros),
+    min_price = min(price_euros),
+    num_cards = n()
+  ) %>%
+    arrange(-max_price) %>%
+  head(8) %>%
+  kbl(
+    format = "html",
+    escape = F, 
+    col.names = c("Card Name", "Max Price", "Average Price", "Min Price", "Number of Cards (Same Name)"),
+    caption = "Table 3: Top 8 Card Names with Most Expensive Cards (in Euros)") %>%
+  kable_paper("striped", full_width = F)
+```
+
+Next, we can observe how the price of a card is affected by the number of days since its release. This relationship is explored in Figure $2$ below. Please note that the displayed figure is filtered to include observations with a price greater than $30$ Euros:
+
+```{r, warning = FALSE, message = FALSE, echo = FALSE}
+# I used ggplot instead of stat_summary to gain better control over visual aesthetics
+train %>%
+  group_by(days_old) %>%
+  summarise(avg_log_price = mean(log_price_euros),
+            num_cards_in_set = mean(total_cards)) %>%
+  ggplot(aes(x = days_old, y = avg_log_price, color = num_cards_in_set)) + 
+  scale_color_gradient(low = "blue", high = "red") +
+  geom_point(alpha = 0.4) +
+  geom_smooth(method = "lm", se = TRUE, alpha = 0.3) + 
+  ggtitle("Figure 3: 
+  Mean of Scaled Logarithmic Average Selling Prices (in Euros) 
+  Against Number of Days Passed Since Release") +
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  xlab("Number of Days Passed Since Release") + 
+  ylab("Logarithmic Average Selling Price (Euros)") + 
+  labs(color = "Number of Cards
+       in Set")
+```
+
+```{r, warning = FALSE, message = FALSE, echo = FALSE}
+### Deleted, moved to website as an interactive plot, Figure B
+train %>%
+  group_by(rarity) %>%
+  summarise(
+    avg_price = mean(price_euros),
+    count = n()
+  ) %>%
+  filter(count > 30) %>%
+  ggplot(aes(x = reorder(rarity, count), y = avg_price, fill = count)) +
+  scale_fill_gradient(low = "blue", high = "red") +
+  geom_bar(stat = "identity") + coord_flip() + 
+  ggtitle("Figure X: 
+  Average Pokemon Card Prices (in Euros) For Each Rarity
+  With More Than 30 Cards, Ordered by Number of Cards") +
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  xlab("Rarity") + 
+  ylab("Average Selling Price (Euros)") + 
+  labs(fill = "Number of Cards")
+```
+
+Showing poor relationship between rarity PSD and response
+```{r, warning = FALSE, message = FALSE, echo = FALSE}
+train %>%
+  group_by(rarity_psd) %>%
+  summarise(avg_log_price = mean(log_price_euros),
+            num_cards = n()) %>%
+  ggplot(aes(x=rarity_psd, y = avg_log_price, color = num_cards)) +
+  geom_point() + 
+  geom_smooth(method = "lm") +
+  ggtitle("Figure 4: Mean Scaled Logarithmic Average Selling Prices for Values of 
+  Standard Deviation in Log Average Selling Price for Each Rarity (Rarity PSD)") +
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  xlab("Log Average Price Standard Deviation of Rarities (Rarity PSD)") + 
+  ylab("Mean Scaled Logarithmic Average Selling Price") +
+  scale_color_gradient(low = "blue", high = "red") + 
+  labs(color = "Number of Cards
+       in Rarity")
+
+# still not a very good predictor, I will just keep rarity_psd as a predictor.
+# and quickly mention this variable (not includng it as a predictor)
+train %>%
+  group_by(rarity_effect_size) %>%
+  summarise(avg_log_price = mean(log_price_euros),
+            num_cards = n()) %>%
+  ggplot(aes(x=rarity_effect_size, y = avg_log_price, color = num_cards)) +
+  geom_point() + 
+  geom_smooth(method = "lm")
+```
+
+Summaries new artist frequency variable for report.
+```{r, warning = FALSE, message = FALSE, echo = FALSE}
+train %>%
+  group_by(rarity) %>%
+  summarise(
+    avg_price = round(mean(price_euros),2),
+    med_price = round(median(price_euros),2),
+    max_price = max(price_euros),
+    min_price = min(price_euros),
+    sd_price = round(sd(price_euros),2),
+    count = n(),
+    avg_age = round(mean(days_old),2),
+    min_days = min(days_old)
+  ) %>%
+  arrange(-avg_price) %>%
+  kbl(
+    format = "html",
+    escape = F, 
+    col.names = c("Rarity", "Average Selling Price", "Median Price", "Maximum Price", "Minimum Price", "Standard Deviation of Price", "Number of Cards", "Average Number of Days Since Release", "Days Since Latest Card"),
+    caption = "Table 2: Summary Statistics of Prices (in Euros) and Days Since Release of Each Rarity, Rounded to Two Decimal Places") %>%
+  kable_paper("striped", full_width = T)
+```
+
+```{r, warning = FALSE, message = FALSE, echo = FALSE, warning = FALSE}
+### Deleted. Remade and moved to website as an interactive plot. Figure C
+train %>%
+  filter(rarity == "Rare" | rarity == "Rare Holo VMAX" | rarity == "Rare Holo VSTAR") %>%
+  ggplot(aes(x = log_price_euros)) +
+  geom_boxplot() + 
+  ggtitle("Figure 3: 
+  Stacked Boxplots of Price Distributions for Selected Rarities") +
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  xlab("Price of Card (Euros)") + 
+  ylab("Number of Cards") + 
+  labs(fill = "Rarity") +
+  facet_wrap(~rarity)
+```
+
+
+```{r, warning = FALSE, message = FALSE, echo = FALSE}
+### Deleted, no longer consider artist as a variable, working with artist frequency now.
+artists <- train %>%
+  group_by(artist) %>%
+  summarise(n = n()) %>%
+  arrange(-n) %>%
+  head(10)
+
+train[train$artist %in% artists$artist] %>%
+
+  ggplot(aes(x = days_old, y = log_price_euros)) + 
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) + 
+  facet_wrap(~artist, nrow = 2) +
+  ggtitle("Figure 4: 
+  Faceted Scatterplot of Card Prices (Euros) 
+  Over Number of Days Passed for Top 10 Most Active Artists (All Time)") +
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  xlab("Number of Days Since Release") + 
+  ylab("Price of Card (Euros)")
+```
+e training dataset:
+
+```{r, warning = FALSE, message = FALSE, echo = FALSE}
+### Deleted, no longer consider artist as a variable, working with artist frequency now.
+top_artists <- train %>%
+  group_by(artist) %>%
+  summarise(top_price = max(price_euros)) %>%
+  arrange(-top_price) %>%
+  head(10)
+
+train[train$artist %in% top_artists$artist] %>%
+  ggplot(aes(x = days_old, y = price_euros)) + 
+  geom_point() +
+  facet_wrap(~artist, nrow = 2) + 
+  ggtitle("Figure 5: 
+  Faceted Scatterplot of Card Prices (Euros) 
+  Over Number of Days Passed for 
+  Top 10 Artists with Most Expensive Illustrated Cards") +
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  xlab("Number of Days Since Release") + 
+  ylab("Price of Card (Euros)")
+```
+Figure for artist frequency data exploration
+
+```{r, warning = FALSE, message = FALSE, echo = FALSE}
+train %>%
+  ggplot(aes(x = log_price_euros, color = artist_frequency)) +
+  geom_boxplot()+ 
+  facet_wrap(~artist_frequency) + 
+  ggtitle("Figure 5: Distribution of Scaled Logarithmic Average Selling Prices of
+   Pokémon cards for Each Level of the Artist Frequency Predictor Variable") +
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  xlab("Logarithmic Average Selling Price (Scaled BFO 10)")
+```
+
+
+Figure for total cards in set predictor
+
+```{r, warning = FALSE, message = FALSE, echo = FALSE}
+train %>%
+  group_by(total_cards) %>%
+  summarise(avg_log_price = mean(log_price_euros),
+            days_old = mean(days_old)) %>%
+  ggplot(aes(x = total_cards, y = avg_log_price, colour = days_old)) + 
+  scale_color_gradient(low = "green", high = "red") +
+  geom_point(alpha= 1) + 
+  geom_smooth(method = "lm") +
+  ggtitle("Figure 6: 
+  Coloured Scatterplot of Logarithmic Average Selling Price over
+  Total Number of Cards in Set With 
+  Gradient for Number of Days Since Release") +
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  xlab("Total Number of Cards in Set") + 
+  ylab("Logarithmic Average Selling Price (Scaled BFO 10)") +
+  labs(colour = "Days Old")
+```
+Cut from report
+
+```{r, warning = FALSE, message = FALSE, echo = FALSE}
+train %>%
+  ggplot(aes(x=total_cards)) + 
+  geom_histogram() + 
+  ggtitle("Figure 7: 
+  Histogram of Total Number of Cards in Set") +
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  xlab("Total Number of Cards in Set") + 
+  ylab("Number of Cards")
+```
+
+Examine how well character appearances captures popularity
+
+```{r, warning = FALSE, message = FALSE, echo = FALSE}
+train %>%
+  group_by(name) %>%
+  summarise(
+    max_price = round(max(log_price_euros),2),
+    avg_price = round(mean(log_price_euros),2),
+    min_price = round(min(log_price_euros),2),
+    sd_price = round(sd(log_price_euros),2),
+    character_appearances = mean(character_appearances) # a constant for each name, so mean = value
+  ) %>%
+    arrange(-character_appearances) %>%
+  head(8) %>%
+  kbl(
+    format = "html",
+    escape = F, 
+    col.names = c("Card Name", "Max  Log Average Price", "Mean Log Average Price", "Min  Log Average Price", "Standard Deviation of Log Average Price", "Character Appearances in Rare Cards"),
+    caption = "Table 3: Top 8 Pokemon Characters with Most Card Appearances
+    Alongside Summary Statistics (rounded to 2 decimals) for Distributions of Scaled Log Average Price") %>%
+  kable_paper("striped", full_width = F)
+```
+
+Figure for character appearances
+```{r, warning = FALSE, message = FALSE, echo = FALSE}
+train %>%
+  group_by(character_appearances) %>%
+  summarise(avg_log_price = mean(log_price_euros),
+            num_pokemon = n_distinct(name)) %>%
+  ggplot(aes(x = character_appearances, y = avg_log_price, color = num_pokemon,)) +
+  scale_color_gradient(low = "green", high = "red") +
+  geom_point() + 
+  geom_smooth(method = "lm", se = FALSE) + 
+  ylab("Scaled Mean Logarithmic Average Selling Price") + 
+  xlab("Number of Character Appearances in Rare Cards") +
+  ggtitle("Figure 7: Mean of Scaled Logarithmic Average Selling Prices (in Euros) for
+          Each Number of Pokemon Character Appearances in Rare Cards") +
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  labs(color = "Number of Pokemon
+       Characters")
+```
+
+Rest is modelling 
+
+### MODELLING
+
+- Linear Regression
+- LR with Interaction?
+- Cubic Spline Regression?
+- Regression Tree
+- bagging (ensemble), outof box error
+  drawback of ensembling methods is that averaged model is no longer easily interpretable.
+- random forest (ensemble)
+- boost (gradient boosting)
+- xgboost (extreme gradient boosting, regularized form L1 and L2, parallelizable)
+ calculate mse, adjusted r^2, etc for each method and see performance
+ - var imp plots from bagging to xgboost, maybe more
+ 
+```{r, warning = FALSE, message = FALSE, echo = FALSE}
+# Bulding linear regression models
+
+# without rarity psd, no interation
+lin_reg_mod <- lm(log_price_euros~days_old+character_appearances+artist_frequency+rarity+ total_cards, data = train)
+
+# without rarity, no interation (try to avoid overfitting with too many dummy variables)
+lin_reg_mod2 <- lm(log_price_euros~days_old+character_appearances+artist_frequency+total_cards+rarity_psd, data = train)
+
+# without rarity psd, with interation
+lin_reg_mod3 <- lm(log_price_euros~days_old+character_appearances+artist_frequency+rarity+ total_cards+days_old*rarity + total_cards*days_old, data = train)
+
+# without rarity, with interation
+lin_reg_mod4 <- lm(log_price_euros~days_old+character_appearances+artist_frequency+rarity_psd+ total_cards+days_old*rarity_psd + total_cards*days_old, data = train)
+```
+
+
+```{r, warning = FALSE, message = FALSE, echo = FALSE}
+# Preparing for variable elimination
+lin_reg_aic <- AIC(lin_reg_mod)
+lin_reg2_aic <- AIC(lin_reg_mod2)
+lin_reg3_aic <- AIC(lin_reg_mod3)
+lin_reg4_aic <- AIC(lin_reg_mod4)
+```
+
+```{r, warning = FALSE, message = FALSE, echo = FALSE}
+# Model 1 variable elimination
+step(lin_reg_mod, scale = lin_reg_aic, direction = "backward")
+```
+```{r, warning = FALSE, message = FALSE, echo = FALSE}
+# Variable elimination for 2nd model (no rarity)
+step(lin_reg_mod2, scale = lin_reg2_aic, direction = "backward")
+```
+```{r, warning = FALSE, message = FALSE, echo = FALSE}
+# Model 3 variable elimination
+step(lin_reg_mod3, scale = lin_reg3_aic, direction = "backward")
+```
+```{r, warning = FALSE, message = FALSE, echo = FALSE}
+# Model 4 variable elimination
+step(lin_reg_mod4, scale = lin_reg4_aic, direction = "backward")
+```
+
+```{r, warning = FALSE, message = FALSE, echo = FALSE}
+# Evaluating linear regression models
+yhat_linreg1_train <- predict(lin_reg_mod, train)
+yhat_linreg1_test <- predict(lin_reg_mod, test)
+yhat_linreg2_train <- predict(lin_reg_mod2, train)
+yhat_linreg2_test <- predict(lin_reg_mod2, test)
+yhat_linreg3_train <- predict(lin_reg_mod3, train)
+yhat_linreg3_test <- predict(lin_reg_mod3, test)
+yhat_linreg4_train <- predict(lin_reg_mod4, train)
+yhat_linreg4_test <- predict(lin_reg_mod4, test)
+
+rmse_linreg1_train <- sqrt(mean((train$log_price_euros - yhat_linreg1_train)^2))
+rmse_linreg1_test <- sqrt(mean((test$log_price_euros - yhat_linreg1_test)^2))
+rmse_linreg2_train <- sqrt(mean((train$log_price_euros - yhat_linreg2_train)^2))
+rmse_linreg2_test <- sqrt(mean((test$log_price_euros - yhat_linreg2_test)^2))
+rmse_linreg3_train <- sqrt(mean((train$log_price_euros - yhat_linreg3_train)^2))
+rmse_linreg3_test <- sqrt(mean((test$log_price_euros - yhat_linreg3_test)^2))
+rmse_linreg4_train <- sqrt(mean((train$log_price_euros - yhat_linreg4_train)^2))
+rmse_linreg4_test <- sqrt(mean((test$log_price_euros - yhat_linreg4_test)^2))
+```
+
+
+```{r, warning = FALSE, message = FALSE, echo = FALSE}
+# For Table 5
+summary(lin_reg_mod)
+```
+```{r, warning = FALSE, message = FALSE, echo = FALSE}
+summary(lin_reg_mod2)
+```
+```{r, warning = FALSE, message = FALSE, echo = FALSE}
+# For table 6
+summary(lin_reg_mod3)
+```
+```{r, warning = FALSE, message = FALSE, echo = FALSE}
+summary(lin_reg_mod4)
+```
+
+```{r, warning = FALSE, message = FALSE, echo = FALSE}
+# Regression tree
+set.seed(1)
+reg_tree <- rpart(
+  log_price_euros ~ days_old+character_appearances+artist_frequency+rarity+total_cards,
+  data = train,
+  method = "anova"
+)
+plotcp(reg_tree)
+printcp(reg_tree)
+opt_cp <- reg_tree$cptable[which.min(reg_tree$cptable[,"xerror"]),"CP"] # 0.01
+
+reg_tree_prune <- prune(reg_tree, opt_cp)
+rpart.plot(reg_tree_prune)
+```
+
+```{r, warning = FALSE, message = FALSE, echo = FALSE}
+yhat_tree_train <- predict(reg_tree_prune, train)
+yhat_tree_test <- predict(reg_tree_prune, test)
+
+rmse_tree_train <- sqrt(mean((train$log_price_euros - yhat_tree_train)^2))
+rmse_tree_test <- sqrt(mean((test$log_price_euros - yhat_tree_test)^2))
+
+a <- printcp(reg_tree_prune)[,c(3,4)]
+
+```
+
+```{r, warning = FALSE, message = FALSE, echo = FALSE}
+set.seed(1)
+# Bagging (using Random Forest)
+bagging_mod <- randomForest(
+  log_price_euros ~ days_old+character_appearances+artist_frequency+rarity+total_cards,
+  data = train,
+  mtry = 5,
+  na.action = na.omit
+)
+```
+
+```{r, warning = FALSE, message = FALSE, echo = FALSE}
+# Evaluate bagging
+
+yhat_bag_train <- predict(bagging_mod, train)
+yhat_bag_test <- predict(bagging_mod, test)
+
+rmse_bag_train <- sqrt(mean((train$log_price_euros - yhat_bag_train)^2))
+rmse_bag_test <- sqrt(mean((test$log_price_euros - yhat_bag_test)^2))
+
+bag_var_imp <- as.data.frame(varImpPlot(bagging_mod))
+bag_var_imp$vars <- rownames(bag_var_imp)
+
+bag_var_imp %>%
+  ggplot(aes(x = reorder(vars, IncNodePurity),
+             y = IncNodePurity)) +
+  geom_point() +
+  geom_segment(aes(x = vars, xend = vars,
+                   y = 0, yend = IncNodePurity)) +
+  ylab("Increase in Node Purity") + 
+  xlab("Variables") +
+  ggtitle("Bagging Model Variable Importance") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  coord_flip()
+```
+
+```{r, warning = FALSE, message = FALSE, echo = FALSE}
+# Random Forest
+set.seed(1)
+rf_mod <- randomForest(
+  log_price_euros ~ days_old+character_appearances+artist_frequency+rarity+total_cards,
+  data = train,
+  na.action = na.omit
+)
+```
+
+```{r, warning = FALSE, message = FALSE, echo = FALSE}
+# Evaluate random forest
+
+yhat_rf_train <- predict(rf_mod, train)
+yhat_rf_test <- predict(rf_mod, test)
+
+rmse_rf_train <- sqrt(mean((train$log_price_euros - yhat_rf_train)^2))
+rmse_rf_test <- sqrt(mean((test$log_price_euros - yhat_rf_test)^2))
+
+rf_var_imp <- as.data.frame(varImpPlot(rf_mod))
+
+rf_var_imp$vars <- rownames(rf_var_imp)
+
+rf_var_imp %>%
+  ggplot(aes(x = reorder(vars, IncNodePurity), y = IncNodePurity)) +
+  geom_point() +
+  geom_segment(aes(x = vars, xend = vars, y = 0, yend = IncNodePurity)) +
+  ylab("Increase in Node Purity") + 
+  xlab("Variables") +
+  ggtitle("Random Forest Model Variable Importance") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  coord_flip()
+```
+
+```{r, warning = FALSE, message = FALSE, echo = FALSE}
+# Boosting with 5 fold cross validation with gaussian distribution (squared error) since my response var is numeric
+# 1 model for each interaction depth from 1 to 5
+set.seed(1)
+boost_mod <- gbm(log_price_euros ~ days_old+character_appearances+artist_frequency+rarity+total_cards, 
+                    data = train, 
+                    distribution = "gaussian", 
+                    n.trees = 5000, 
+                    cv.folds = 10,
+                    interaction.depth = 1, 
+                    shrinkage = 0.1, 
+                    verbose = FALSE)
+
+boost2_mod <- gbm(log_price_euros ~ days_old+character_appearances+artist_frequency+rarity+total_cards, 
+                    data = train, 
+                    distribution = "gaussian", 
+                    n.trees = 5000, 
+                    cv.folds = 10,
+                    interaction.depth = 2, 
+                    shrinkage = 0.1, 
+                    verbose = FALSE)
+
+boost3_mod <- gbm(log_price_euros ~ days_old+character_appearances+artist_frequency+rarity+total_cards, 
+                    data = train, 
+                    distribution = "gaussian", 
+                    n.trees = 5000, 
+                    cv.folds = 10,
+                    interaction.depth = 3, 
+                    shrinkage = 0.1, 
+                    verbose = FALSE)
+
+boost4_mod <- gbm(log_price_euros ~ days_old+character_appearances+artist_frequency+rarity+total_cards, 
+                    data = train, 
+                    distribution = "gaussian", 
+                    n.trees = 5000, 
+                    cv.folds = 10,
+                    interaction.depth = 4, 
+                    shrinkage = 0.1, 
+                    verbose = FALSE)
+
+boost5_mod <- gbm(log_price_euros ~ days_old+character_appearances+artist_frequency+rarity+total_cards, 
+                    data = train, 
+                    distribution = "gaussian", 
+                    n.trees = 5000, 
+                    cv.folds = 10,
+                    interaction.depth = 5, 
+                    shrinkage = 0.1, 
+                    verbose = FALSE)
+```
+
+```{r, warning = FALSE, message = FALSE, echo = FALSE}
+# Evaluating Boosting model
+yhat_boost_train <- predict(boost_mod, train)
+yhat_boost_test <- predict(boost_mod, test)
+yhat_boost2_train <- predict(boost2_mod, train)
+yhat_boost2_test <- predict(boost2_mod, test)
+yhat_boost3_train <- predict(boost3_mod, train)
+yhat_boost3_test <- predict(boost3_mod, test)
+yhat_boost4_train <- predict(boost4_mod, train)
+yhat_boost4_test <- predict(boost4_mod, test)
+yhat_boost5_train <- predict(boost5_mod, train)
+yhat_boost5_test <- predict(boost5_mod, test)
+
+rmse_boost_train <- sqrt(mean((train$log_price_euros - yhat_boost_train)^2))
+rmse_boost_test <- sqrt(mean((test$log_price_euros - yhat_boost_test)^2))
+rmse_boost2_train <- sqrt(mean((train$log_price_euros - yhat_boost2_train)^2))
+rmse_boost2_test <- sqrt(mean((test$log_price_euros - yhat_boost2_test)^2))
+rmse_boost3_train <- sqrt(mean((train$log_price_euros - yhat_boost3_train)^2))
+rmse_boost3_test <- sqrt(mean((test$log_price_euros - yhat_boost3_test)^2))
+rmse_boost4_train <- sqrt(mean((train$log_price_euros - yhat_boost4_train)^2))
+rmse_boost4_test <- sqrt(mean((test$log_price_euros - yhat_boost4_test)^2))
+rmse_boost5_train <- sqrt(mean((train$log_price_euros - yhat_boost5_train)^2))
+rmse_boost5_test <- sqrt(mean((test$log_price_euros - yhat_boost5_test)^2))
+
+# The best model based on train data is with 5 interaction depth
+# The best model when observing test data is with 4 depth. But models with depths 3,4,5 all work with pretty much same performance.
+```
+
+```{r, warning = FALSE, message = FALSE, echo = FALSE}
+# Making xgboost model
+set.seed(1)
+
+train_control = trainControl(method = "cv", number = 10, search ="grid")
+
+tune_grid <- expand.grid(
+  max_depth = c(1, 3, 5, 7),
+  nrounds = (1:10) * 50,
+  eta = 0.01,
+  gamma = 0,
+  subsample = 1,
+  min_child_weight = 1,
+  colsample_bytree = 0.6
+)
+
+xgb_mod <- caret::train(
+  log_price_euros~ days_old+character_appearances+artist_frequency+rarity+total_cards,
+  data = train,
+  method = "xgbTree",
+  trControl = train_control,
+  na.action = na.omit
+)
+```
+
+```{r, warning = FALSE, message = FALSE, echo = FALSE}
+# Evaluating xgboost
+best_tune <- xgb_mod$bestTune
+
+yhat_xgboost_train <- predict(boost_mod, train)
+yhat_xgboost_test <- predict(boost_mod, test)
+
+rmse_xgboost_train <- sqrt(mean((train$log_price_euros - yhat_xgboost_train)^2))
+rmse_xgboost_test <- sqrt(mean((test$log_price_euros - yhat_xgboost_test)^2))
+
+best_tune
+```
+```{r, warning = FALSE, message = FALSE, echo = FALSE}
+xgb_var_imp <- varImp(xgb_mod)$importance
+xgb_var_imp$vars <- rownames(xgb_var_imp)
+
+xgb_var_imp %>%
+  ggplot(aes(x = reorder(vars, Overall), y = Overall)) +
+  geom_point() +
+  geom_segment(aes(x = vars, xend = vars, y = 0, yend = Overall)) +
+  ylab("Increase in Node Purity") + 
+  xlab("Variables") +
+  ggtitle("Extreme Gradient Boosting Model Variable Importance") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  coord_flip()
+```
+
+```{r, warning = FALSE, message = FALSE, echo = FALSE}
+# r squared is not a good metric for non-linear models (e.x. xgboost)
+
+# I will use RMSE (sqrt of MSE) as a metric across all models instead
+max(data$log_price_euros)
+min(data$log_price_euros)
+IQR(data$log_price_euros)
+range(data$log_price_euros)
+```
+
+# Summary and Reflective Thoughts
+
+The most important finding I made during my exploration of the data was the distribution of the response variable, the current average selling price of a card. Through my exploration, I discovered that the distribution was heavily right-skewed with many of the cards having a price near $0$. Upon further exploration, I found that a lot of these observations came from cards with the "Rare" rarity. When looking at the total number of days since a card's release, I was able to observe a weak relationship between the key variable and the response. This was emphasized by the almost flat regression curve when looking at all observations in the training data. When looking at rarity as a key factor variable, I observed more interesting findings where some rarities appeared to have much higher average prices compared to other rarities. I found that most of the rarities had a right-skewed price distribution, with a few exceptions that had negligible skew. Thus, within each rarity, most cards would still be undesirable which would be reflected by the right skew. This indicated that although rarity may have an effect on card prices, it is not the only driving factor. 
+
+Looking at the artists of cards, I observed that some artists had worked on multiple expensive cards, while others had only worked on cards with prices close to $0$. Furthermore, I observed how the relationship between number of days since release and price of a card may be different for each artist. Looking at the total number of cards in a set as a predictor for card prices, I found that the two variables did not have a strong relationship. This was supported by the flat price distribution over the number of cards in a set, as well as looking at the histogram of the distribution for the number of cards in a set.
+
+Throughout my exploration, I continuously looked for ways to explore any correlation between my potential predictor variables. I found multiple instances of possible correlation, some which I expected and some which surprised me. This correlation between predictors would violate modelling assumptions (e.x. for linear regression) and would impose limitations on my future models. 
+
+Once again, since the API delivers data that is updated to the current day (e.x. current price), I faced potential issues regarding repropducibility of this study. To counteract this, I exported the data (collected through the API in the original write-up) and created an alternative version of this file that reads the data from file, rather than the API. Thus, to be able to reproduce the results in my writeup, a third party would use the data from the day of submission (March 15, 2024) rather than requesting live data from the API.
+
+Overall, I was able to explore my research question with a dataset I am personally interested in, however I am worried when it comes to modelling this data. This is primarily due to failing to find significantly strong relationships between my key variables and the response variable (the distribution of the response variable may play a significant part in this). Although I was able to get, clean/wrangle, and explore the data effectively, I am concerned for future stages of this project. At the moment, I am trying to find additional variables, and in the worst case, considering a new dataset with a new research question that could lead to stronger results and more effective models, as the relationships regarding my current variables and dataset do not appear to be as strong as I had hoped. An example of a variable I think would have a strong relationship with card price would be a scale describing ratings of each card given by individuals. However, this data does not currently exist in available APIs and collecting data for this variable would be personally infeasible given the number of cards that would require ratings.
+
+# NEW
+
+Regarding the card name as a source of potential predictor variables, I considered two options. First, I considered performing text extraction on certain parts of card names that would repeat across similar types of cards such as "VMAX", "EX", and other repeating characters. Unfortunately, these strings found in the card names correspond to the rarity of the card itself, which is an already existing predictor variable. Thus, performing text extraction with respect to the card names in this fashion would cause correlation between predictor variables and would not help much. Secondly, I considered text extraction on card names to extract the primary character featured in the card (specifically, the Pokémon). Afterwards, there are two options I could take. 
+

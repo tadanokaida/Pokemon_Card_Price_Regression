@@ -1,0 +1,152 @@
+---
+title: "Interactive Visualizations"
+output: 
+    html_document:
+        toc: TRUE
+        toc_float: TRUE
+---
+```{r, warning = FALSE, message = FALSE, echo = FALSE}
+library(rvest)
+library(xml2)
+library(httr)
+library(data.table)
+library(tidyverse)
+library(ggplot2)
+library(tidyr)
+library(kableExtra)
+library(dplyr)
+library(tidytext)
+library(mgcv)
+library(tidyverse)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+library(gbm)
+library(xgboost)
+library(caret)
+library(knitr)
+library(plotly)
+
+
+
+#train <- read.csv("https://raw.githubusercontent.com/tadanokaida/Pokemon_Card_Price_Regression/main/data/train")
+train <- read.csv("data/train_data070524.csv")
+```
+
+Note that these figures are labelled using letters rather than numbers to avoid confusion with figures contained in the written report. Since these plots are used in the EDA of my report, these plots are generated using the training data from my study. This ensures the testing data does not affect my analysis during my EDA.
+
+### Figure B:
+
+```{r, warning = FALSE, message = FALSE, echo = FALSE}
+plot1 <- train %>%
+  group_by(rarity) %>%
+  summarise(
+    avg_log_price = mean(log_price_euros),
+    count = n(),
+    sd = sd(log_price_euros)
+  ) %>%
+  ggplot(aes(x = reorder(rarity, count), y = avg_log_price, fill = count,
+             text = sprintf("Rarity: %s<br>Mean Scaled Log Avg Price: %s<br>Number of Cards: %s<br>Standard Deviation in Price: %s", rarity, round(avg_log_price,2), count, round(sd,2)))) +
+  scale_fill_gradient(low = "blue", high = "red") +
+  geom_bar(stat = "identity") + coord_flip() + 
+  ggtitle("Figure B: Mean Logarithmic Average Selling Price (in Euros) 
+  For Each Rarity Ordered by Number of Cards") +
+  xlab("Rarity") + 
+  ylab("Mean Logarithmic Average Selling Price in Euros (Scaled BFO 10)") + 
+  labs(fill = "Number of Cards") +
+  theme(plot.title = element_text(hjust = 0.5, size = 11))
+
+ggplotly(plot1, tooltip = "text")
+```
+
+Figure B is a barplot showing the mean of the response variable (logarithmic average selling price in Euros, scaled by a factor of 10) for each of the 31 rarity groups. The rarities are ordered in descending order by the number of cards in the rarity. This barplot helps us observe how rarity affects the response variable, while also exploring how this relationship is affected by the number of cards in each rarity. Looking at different lengths of bars in Figure B, we can observe that different rarities have different mean values for the response. The differences in lengths between bars can be pretty significant, indicating the effectiveness of rarity as a predictor for average selling price. Since the boxplot is ordered and coloured by number of cards in each rarity, we can try to observe the distribution of cards to each rarity. Unfortunately, we cannot see any clear pattern on how the number of cards affects average selling price, so this cannot act as a substitute for rarity (does not carry the same necessary information). However, we can make an interesting observation that the "Rare" rarity has 1489 cards (seen by hovering over the bar with mouse) and a very low (scaled) log average selling price compared to the other rarities. In fact, it is the only rarity with a negative log price, which means its average price is below $1$ Euro. Thus, with its abundance of cards and low average selling price, we can induce that the "Rare" rarity generally acts as a the "common" rarity among rare cards. Overall, we have seen through Figure B that the rarity variable has effects on the response variable and that summary statistics of rarity have a hard time capturing the relationship between rarity and the response variable.
+
+### Figure C
+
+```{r, warning = FALSE, message = FALSE, echo = FALSE}
+rarity_subset <- train %>%
+  group_by(rarity) %>%
+  summarise(count = n()) %>%
+  filter(count > 25)
+
+plot2_data <- merge(x = rarity_subset,
+                    y = train,
+                    by = "rarity")
+plot2 <- plot2_data %>%
+  filter(plot2_data$rarity %in% rarity_subset$rarity) %>%
+  ggplot(aes(x = reorder(rarity, count), y = log_price_euros, color = reorder(rarity, -count))) + 
+  geom_boxplot() + 
+  coord_flip() + 
+  ylab("Scaled Logarithmic Average Selling Price") + 
+  xlab("Rarity") + 
+  guides(color = guide_legend(title = "Rarity")) + 
+  ggtitle("Figure C: Logarithmic Average Selling Price Distributions for
+          Each Rarity with Over 25 Cards, Ordered by Number of Cards in Rarity") +
+  theme(plot.title = element_text(hjust = 0.5, size = 11),
+        axis.title.x = element_text(hjust = 2)) #doesn't work in moving the axis label for rarity
+
+ggplotly(plot2)
+```
+
+Figure C displays boxplots for distributions of the response variable for each rarity with over $25$ observations. The plot is an extension of Figure B with the purpose of looking further into whether the relationship between the rarity predictor and the response variable can be captured by summary statistics for rarity. This series of boxplots (ordered in descending order of number of cards in rarity) allows us to investigate the standard deviation in logarithmic average selling price for each rarity. Unfortunately, there does not seem to be an identifiable relationship between the standard deviation (spread) of each rarity and its median logarithmic average selling price. On the other hand, we can observe that some rarities with larger amounts of observations have larger standard deviations. However, this is not universally true as we can see this pattern broken as travel down the boxplots. Additionally, we have already shown through Figure B that summary statistics (number of observations) of the logarithmic price distribution for each rarity do not capture rarity's relationship with the response variable well. Thus, the standard deviation of logarithmic average selling price for each rarity (Rarity PSD predictor) seems to lack a strong relationship with the response variable.
+
+### Figure D:
+
+```{r, warning = FALSE, message = FALSE, echo = FALSE}
+top_8_popular_char <- train %>%
+  group_by(name) %>%
+  summarise(character_appearances = mean(character_appearances))  %>% # constant for each pokemon
+  arrange(desc(character_appearances)) %>%
+  head(8)
+
+top_8_data <- train %>%
+  filter(name %in% top_8_popular_char$name) %>%
+  arrange(desc(character_appearances))
+
+plot3 <- top_8_data %>%
+  group_by(name) %>%
+  ggplot(aes(x = reorder(name, -character_appearances), y = log_price_euros, color = reorder(name, -character_appearances))) + 
+  geom_boxplot() +
+  #geom_jitter(alpha = 0.4, size = 1) + I wanted to add a jitter plot but it blocks the mouse hover information on quantiles...
+  ylab("Logarithmic Average Selling Price") + 
+  xlab("Pokemon Character") +
+  guides(color = guide_legend(title = "Pokemon Character")) + # it doesn't allow me to use an "é" in the legend title...
+  ggtitle("Figure D: Distributions of Logarithmic Average Selling Prices (in Euros)
+  for Each of Top 8 Pokemon With Most Rare Card Appearances") +
+  theme(plot.title = element_text(hjust = 0.5, size = 11))
+  
+ggplotly(plot3, tooltip = "text")
+```
+
+
+Figure D displays the distributions for the scaled logarithmic average selling prices (response variable) of the top 8 Pokémon characters sorted in descending order (from left to right/top to bottom) of the number of character appearances in rare Pokémon cards. Here, we can observe that the median prices do not strictly decline as the number of character appearances decreases (from left to right). Since this plot is structured by Pokémon characters rather than number of character appearances (although they correspond to each other), we can closely observe the distribution of the response variable for each character. For example, we can notice the outlier in the boxplot for the Pokémon "Rayquaza" with $71.11$ scaled logarithmic average selling price and use Figure E to learn more about this observation.
+
+### Figure E:
+
+```{r, warning = FALSE, message = FALSE, echo = FALSE}
+top_8_popular_char <- train %>%
+  group_by(name) %>%
+  summarise(character_appearances = mean(character_appearances))  %>% # constant for each pokemon
+  arrange(desc(character_appearances)) %>%
+  head(8)
+
+top_8_data <- train %>%
+  filter(name %in% top_8_popular_char$name) %>%
+  arrange(desc(character_appearances))
+
+plot4 <- top_8_data %>%
+  ggplot(aes(x = days_old, y = log_price_euros, color = reorder(name, -character_appearances), 
+             text = sprintf("Scaled Log Avg Price: %s<br>Avg Price: %s<br>Days Old: %s<br>Character Appearances: %s<br>Rarity: %s<br>Card ID: %s", round(log_price_euros,2), round(price_euros,2), days_old, character_appearances, rarity, card_id), group = name)) + 
+  geom_point(alpha = 0.5) + 
+  geom_smooth(method = "lm", se = FALSE, alpha = 0.7) + 
+  ylab("Logarithmic Average Selling Price") + 
+  xlab("Number of Days Old") +
+  guides(color = guide_legend(title = "Pokemon Names")) + # it doesn't allow me to use an "é" in the legend title...
+  ggtitle("Figure #: Logarithmic Average Selling Prices (Euros) Over
+  Days Old for Top 8 Pokemon With Most Rare Card Appearances") +
+  theme(plot.title = element_text(hjust = 0.5, size = 11))
+  
+ggplotly(plot4, tooltip = "text")
+```
+
+This is a supplementary plot that allows us to observe each observation for the top 8 Pokémon characters with the most character appearances in rare cards. We can hover over any point to gain more information on it, including the card's ID which is not a predictor in the model, but a useful variable to uniquely identify each card (searching this ID online will get you information on the card). For example, continuing from the above Figure D, we can search for the Rayquaza outlier with $71.11$ scaled logarithmic average selling price. We then find out its rarity is "Rare Holo Star" which has a very high mean response value compared to other rarities. Thus, this helped us observe the significance of rarity as a predictor for the logarithmic average selling price of a Pokémon card.
