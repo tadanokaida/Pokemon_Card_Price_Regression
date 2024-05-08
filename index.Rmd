@@ -35,7 +35,7 @@ Pokémon is an animated series spanning games, shows, trading cards, and more. T
 
 A Pokémon Card is a collectible card starring in the "Pokémon Trading Card Game" (also known as Pokémon TCG). This trading card game sees two players battling each other using Pokémon cards. Each card features illustrations of a character, item, or location along with the effects of the card in battle. Each card belongs to a set (of cards) representing an overarching theme for that collection of cards. There are different types of Pokémon cards (e.x. Pokémon, Trainer, Energy), each with different functions. This study will focus solely on Pokémon cards with type "Pokémon" (for simplicity, assume any mention of a Pokémon card refers to a card with type "Pokémon").
 
-![Image of card taken from https://www.pokemon.com/us/pokemon-tcg/pokemon-cards/series/swsh4/44/](figures/pokemoncardannotation.png)
+![Image of card taken from https://www.pokemon.com/us/pokemon-tcg/pokemon-cards/series/swsh4/44/](https://raw.githubusercontent.com/tadanokaida/Pokemon_Card_Price_Regression/master/figures/pokemoncardannotation.png)
 
 <br />
 
@@ -88,7 +88,7 @@ As previously mentioned, I noticed the data for the average selling price of a r
 
 Here is a table summarizing the variables in my study (response variable at the top, and the rest are predictors).
 
-![](figures/tableA.png)
+![](https://raw.githubusercontent.com/tadanokaida/Pokemon_Card_Price_Regression/master/figures/tableA.png)
 
 Note that a large majority of these variables are processed variables. The process of constructing these variables is described in my report, but here is a quick summary of where each variable came from:
 
