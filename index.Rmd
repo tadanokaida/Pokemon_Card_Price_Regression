@@ -169,5 +169,3 @@ This following is a very quick and limited summary of some interesting results f
 - The Project repository can be found [here](https://github.com/tadanokaida/Pokemon_Card_Price_Regression)
 
 - Download the written report [here](https://raw.githubusercontent.com/tadanokaida/Pokemon_Card_Price_Regression/master/pokemon_card_price_regression_report.pdf) or at the top of the website.
-
-- Watch my video presentation [here](https://play.library.utoronto.ca/watch/d403288bbf1a58494c423dd0dc1710a7)
